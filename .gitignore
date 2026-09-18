@@ -1,0 +1,19 @@
+# PowerShell / editor / local output
+*.log
+*.tmp
+*.bak
+*.clixml
+*.csv
+*.json
+output/
+reports/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local test or environment files
+.env
+.env.*
+secrets/
+certs/
