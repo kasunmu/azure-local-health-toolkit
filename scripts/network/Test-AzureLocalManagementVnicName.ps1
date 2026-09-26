@@ -7,7 +7,8 @@
     Compares the expected Network ATC Management OS adapter name with the
     adapters currently visible to Windows and Hyper-V.
 
-    This script is read-only.
+    This script is read-only and uses the same validation function as the
+    main Azure Local health collector.
 
 .PARAMETER IntentName
     Network ATC intent name used to derive the expected vNIC name.
@@ -35,58 +36,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $ExpectedName) {
-    $ExpectedName = "vManagement($IntentName)"
+$helperPath = Join-Path $PSScriptRoot '..\..\src\private\Test-AzureLocalManagementVnicState.ps1'
+
+if (-not (Test-Path -LiteralPath $helperPath)) {
+    throw "Shared Management OS vNIC validation helper was not found at '$helperPath'."
 }
 
-$result = [ordered]@{
-    IntentName               = $IntentName
-    ExpectedName             = $ExpectedName
-    ExpectedNetAdapterFound  = $false
-    ExpectedVMAdapterFound   = $false
-    GuidStyleAdapterDetected = $false
-    GuidStyleAdapters        = @()
-    Status                   = 'Unknown'
-    Details                  = ''
-}
+. $helperPath
 
-if (Get-Command Get-NetAdapter -ErrorAction SilentlyContinue) {
-    $netAdapters = @(Get-NetAdapter)
-
-    $result.ExpectedNetAdapterFound = [bool](
-        $netAdapters | Where-Object Name -eq $ExpectedName
-    )
-
-    $guidLike = @(
-        $netAdapters | Where-Object {
-            $_.Name -match '^[{(]?[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}[)}]?$'
-        }
-    )
-
-    if ($guidLike.Count -gt 0) {
-        $result.GuidStyleAdapterDetected = $true
-        $result.GuidStyleAdapters = @($guidLike | Select-Object -ExpandProperty Name)
-    }
-}
-
-if (Get-Command Get-VMNetworkAdapter -ErrorAction SilentlyContinue) {
-    $vmAdapters = @(Get-VMNetworkAdapter -ManagementOS)
-    $result.ExpectedVMAdapterFound = [bool](
-        $vmAdapters | Where-Object Name -eq $ExpectedName
-    )
-}
-
-if ($result.ExpectedNetAdapterFound -or $result.ExpectedVMAdapterFound) {
-    $result.Status = 'Healthy'
-    $result.Details = "Expected Management OS vNIC name '$ExpectedName' is present."
-}
-elseif ($result.GuidStyleAdapterDetected) {
-    $result.Status = 'Warning'
-    $result.Details = "Expected Management OS vNIC name '$ExpectedName' was not found and one or more GUID-style adapter names were detected."
-}
-else {
-    $result.Status = 'Warning'
-    $result.Details = "Expected Management OS vNIC name '$ExpectedName' was not found."
-}
-
-[pscustomobject]$result
+Test-AzureLocalManagementVnicState -IntentName $IntentName -ExpectedName $ExpectedName
