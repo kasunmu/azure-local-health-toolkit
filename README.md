@@ -6,7 +6,7 @@ The project is based on practical Azure Local administration and troubleshooting
 
 ## Current scope
 
-Version 0.1 focuses on core platform checks:
+Version 0.1 focuses on core platform and pre-update checks:
 
 - Cluster health
 - Cluster node state
@@ -14,17 +14,29 @@ Version 0.1 focuses on core platform checks:
 - Storage pool health
 - Virtual disk health
 - Physical disk health
+- Network ATC intent discovery
+- Management OS vNIC name validation
+- GUID-style virtual adapter warning detection
+- WDAC / Code Integrity enforcement-mode reporting
 - Azure Connected Machine agent presence and local status
 - Export of collected results to JSON or CSV
+
+The Network ATC and Management OS vNIC checks were added from a real Azure Local update troubleshooting pattern and converted into a reusable, read-only pre-update validation.
 
 ## Repository structure
 
 ```text
 .
 ├── src/
-│   └── Get-AzureLocalHealth.ps1
+│   ├── Get-AzureLocalHealth.ps1
+│   └── private/
+│       ├── Get-AzureLocalWdacState.ps1
+│       └── Test-AzureLocalManagementVnicState.ps1
+├── scripts/
+│   └── network/
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   └── case-studies/
 ├── examples/
 │   └── sample-output.md
 ├── .github/
@@ -41,8 +53,10 @@ Version 0.1 focuses on core platform checks:
 
 - Windows PowerShell 5.1 or PowerShell 7+
 - Run from a system with the FailoverClusters and Storage modules available for full cluster checks
+- Network ATC and Hyper-V cmdlets are required for the related networking checks
 - Administrative permissions may be required for some local health checks
 - Azure Connected Machine Agent is optional. The script will report when it is not installed
+- If a required feature or cmdlet is unavailable, the toolkit reports `NotAvailable` or a warning instead of stopping the full health run
 
 ## Quick start
 
@@ -79,15 +93,29 @@ Each check returns a simple object with:
 Example:
 
 ```text
-Category       Name                   Status   Details
---------       ----                   ------   -------
-Cluster        Cluster service        Healthy  Cluster AZLOCAL-DEMO is reachable
-ClusterNode    NODE-01                Healthy  State: Up
-CSV            Cluster Virtual Disk   Healthy  State: Online
-StoragePool    S2D on Cluster         Healthy  HealthStatus: Healthy
+Category        Name                              Status   Details
+--------        ----                              ------   -------
+Cluster         Cluster service                   Healthy  Cluster AZLOCAL-DEMO is reachable
+ClusterNode     NODE-01                           Healthy  State: Up
+CSV             Cluster Virtual Disk              Healthy  State: Online
+StoragePool     S2D on Cluster                    Healthy  HealthStatus: Healthy
+NetworkATC      Intent management_compute         Healthy  Detected intent roles: Management, Compute
+ManagementVnic  vManagement(management_compute)   Healthy  Expected Management OS vNIC name is present.
+WDAC            Application Control mode          Healthy  Kernel-mode CI: Enforced; User-mode CI: Audit
 ```
 
-The names above are illustrative only.
+The names and values above are synthetic and are not copied from a production environment.
+
+## Network troubleshooting helpers
+
+The `scripts/network` directory also contains standalone inspection and guarded remediation helpers for:
+
+- Network ATC state inspection
+- Management OS vNIC name validation
+- explicit Management OS adapter rename with `-WhatIf` / confirmation
+- Network ATC retry-state requests with `-WhatIf`
+
+The main health collector remains read-only.
 
 ## Roadmap
 
@@ -96,11 +124,11 @@ Planned additions include:
 - Azure Local update status and recent update failures
 - Windows Admin Center extension status
 - Certificate expiry checks
-- Arc connectivity validation
+- richer Arc connectivity validation
 - HTML reporting
-- Threshold-based warning and critical states
+- threshold-based warning and critical states
 - Pester tests
-- Additional documentation and troubleshooting guidance
+- additional documentation and troubleshooting guidance
 
 ## Security and privacy
 
