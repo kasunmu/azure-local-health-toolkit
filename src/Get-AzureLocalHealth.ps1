@@ -4,9 +4,9 @@
     Collects a lightweight Azure Local health summary.
 
 .DESCRIPTION
-    Runs a set of local cluster, node, CSV, storage, and Azure Connected
-    Machine Agent checks. The script is designed to be reusable and does not
-    rely on organisation-specific values.
+    Runs read-only cluster, node, CSV, storage, Network ATC, Management OS
+    vNIC, WDAC, and Azure Connected Machine Agent checks. The script is
+    designed to be reusable and does not rely on organisation-specific values.
 
 .PARAMETER OutputPath
     Optional path to export the collected results.
@@ -35,6 +35,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $results = [System.Collections.Generic.List[object]]::new()
+
+$privateHelpers = @(
+    'Test-AzureLocalManagementVnicState.ps1',
+    'Get-AzureLocalWdacState.ps1'
+)
+
+foreach ($helper in $privateHelpers) {
+    $helperPath = Join-Path $PSScriptRoot "private\$helper"
+    if (Test-Path -LiteralPath $helperPath) {
+        . $helperPath
+    }
+}
 
 function Add-HealthResult {
     param(
@@ -171,6 +183,74 @@ function Get-StorageHealth {
     }
 }
 
+function Get-NetworkAtcHealth {
+    if (-not (Test-CommandAvailable -Name 'Get-NetIntent')) {
+        Add-HealthResult -Category 'NetworkATC' -Name 'Network ATC' -Status 'NotAvailable' -Details 'Get-NetIntent is not available on this system.'
+        return
+    }
+
+    try {
+        $intents = @(Get-NetIntent -ErrorAction Stop)
+    }
+    catch {
+        Add-HealthResult -Category 'NetworkATC' -Name 'Network ATC' -Status 'Unknown' -Details $_.Exception.Message
+        return
+    }
+
+    if ($intents.Count -eq 0) {
+        Add-HealthResult -Category 'NetworkATC' -Name 'Network ATC' -Status 'Warning' -Details 'No Network ATC intents were detected.'
+        return
+    }
+
+    $managementIntents = @($intents | Where-Object { $_.IsManagementIntent -eq $true })
+
+    foreach ($intent in $intents) {
+        $roles = [System.Collections.Generic.List[string]]::new()
+        if ($intent.IsManagementIntent) { $roles.Add('Management') }
+        if ($intent.IsComputeIntent) { $roles.Add('Compute') }
+        if ($intent.IsStorageIntent) { $roles.Add('Storage') }
+
+        $roleText = if ($roles.Count -gt 0) { $roles -join ', ' } else { 'Role metadata unavailable' }
+        Add-HealthResult -Category 'NetworkATC' -Name ("Intent {0}" -f $intent.IntentName) -Status 'Healthy' -Details ("Detected intent roles: {0}" -f $roleText)
+    }
+
+    if ($managementIntents.Count -eq 0) {
+        Add-HealthResult -Category 'ManagementVnic' -Name 'Management OS vNIC' -Status 'Warning' -Details 'Network ATC intents were detected, but none reported IsManagementIntent=True.'
+        return
+    }
+
+    if (-not (Get-Command Test-AzureLocalManagementVnicState -ErrorAction SilentlyContinue)) {
+        Add-HealthResult -Category 'ManagementVnic' -Name 'Management OS vNIC validation' -Status 'NotAvailable' -Details 'The shared Management OS vNIC validation helper is unavailable.'
+        return
+    }
+
+    foreach ($intent in $managementIntents) {
+        try {
+            $vnicState = Test-AzureLocalManagementVnicState -IntentName $intent.IntentName
+            Add-HealthResult -Category 'ManagementVnic' -Name $vnicState.ExpectedName -Status $vnicState.Status -Details $vnicState.Details
+        }
+        catch {
+            Add-HealthResult -Category 'ManagementVnic' -Name ("Intent {0}" -f $intent.IntentName) -Status 'Unknown' -Details $_.Exception.Message
+        }
+    }
+}
+
+function Get-WdacHealth {
+    if (-not (Get-Command Get-AzureLocalWdacState -ErrorAction SilentlyContinue)) {
+        Add-HealthResult -Category 'WDAC' -Name 'Application Control mode' -Status 'NotAvailable' -Details 'The WDAC state helper is unavailable.'
+        return
+    }
+
+    $wdacState = Get-AzureLocalWdacState
+
+    if ($wdacState.Status -eq 'NotAvailable') {
+        Add-HealthResult -Category 'WDAC' -Name 'Application Control mode' -Status 'NotAvailable' -Details ("Unable to query Win32_DeviceGuard: {0}" -f $wdacState.Error)
+        return
+    }
+
+    Add-HealthResult -Category 'WDAC' -Name 'Application Control mode' -Status $wdacState.Status -Details ("Kernel-mode CI: {0}; User-mode CI: {1}" -f $wdacState.KernelMode, $wdacState.UserMode)
+}
+
 function Get-ArcAgentHealth {
     $azcmagent = Get-Command -Name 'azcmagent' -ErrorAction SilentlyContinue
 
@@ -225,6 +305,8 @@ function Export-HealthResults {
 
 Get-ClusterHealth
 Get-StorageHealth
+Get-NetworkAtcHealth
+Get-WdacHealth
 Get-ArcAgentHealth
 
 $results | Sort-Object Category, Name | Format-Table -AutoSize
