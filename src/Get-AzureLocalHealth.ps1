@@ -19,6 +19,11 @@
 
 .EXAMPLE
     .\Get-AzureLocalHealth.ps1 -OutputPath .\output\health.json -Format Json
+
+.EXAMPLE
+    .\Get-AzureLocalHealth.ps1 | Where-Object Status -ne 'Healthy'
+
+    Shows only checks that need attention.
 #>
 
 [CmdletBinding()]
@@ -38,15 +43,26 @@ $results = [System.Collections.Generic.List[object]]::new()
 
 $privateHelpers = @(
     'Test-AzureLocalManagementVnicState.ps1',
-    'Get-AzureLocalWdacState.ps1'
+    'Get-AzureLocalWdacState.ps1',
+    'Get-AzureLocalArcAgentState.ps1'
 )
 
+$privateRoot = Join-Path -Path $PSScriptRoot -ChildPath 'private'
+
 foreach ($helper in $privateHelpers) {
-    $helperPath = Join-Path $PSScriptRoot "private\$helper"
+    $helperPath = Join-Path -Path $privateRoot -ChildPath $helper
     if (Test-Path -LiteralPath $helperPath) {
         . $helperPath
     }
 }
+
+# Show Category, Name, Status and Details by default; Timestamp stays on the
+# object for exports and pipelines.
+$defaultDisplay = [System.Management.Automation.PSPropertySet]::new(
+    'DefaultDisplayPropertySet',
+    [string[]]@('Category', 'Name', 'Status', 'Details')
+)
+$script:standardMembers = [System.Management.Automation.PSMemberInfo[]]@($defaultDisplay)
 
 function Add-HealthResult {
     param(
@@ -64,13 +80,17 @@ function Add-HealthResult {
         [string]$Details
     )
 
-    $results.Add([pscustomobject]@{
-        Category  = $Category
-        Name      = $Name
-        Status    = $Status
-        Details   = $Details
-        Timestamp = (Get-Date).ToString('o')
-    })
+    $result = [pscustomobject]@{
+        PSTypeName = 'AzureLocal.HealthResult'
+        Category   = $Category
+        Name       = $Name
+        Status     = $Status
+        Details    = $Details
+        Timestamp  = (Get-Date).ToString('o')
+    }
+    $result | Add-Member -MemberType MemberSet -Name PSStandardMembers -Value $script:standardMembers
+
+    $results.Add($result)
 }
 
 function Test-CommandAvailable {
@@ -248,34 +268,25 @@ function Get-WdacHealth {
         return
     }
 
-    Add-HealthResult -Category 'WDAC' -Name 'Application Control mode' -Status $wdacState.Status -Details ("Kernel-mode CI: {0}; User-mode CI: {1}" -f $wdacState.KernelMode, $wdacState.UserMode)
+    $wdacDetails = "Kernel-mode CI: {0}; User-mode CI: {1}" -f $wdacState.KernelMode, $wdacState.UserMode
+    if ($wdacState.Status -eq 'Warning') {
+        $wdacDetails += '. Azure Local applies WDAC in enforced mode by default; confirm audit or off is intentional.'
+    }
+
+    Add-HealthResult -Category 'WDAC' -Name 'Application Control mode' -Status $wdacState.Status -Details $wdacDetails
 }
 
 function Get-ArcAgentHealth {
-    $azcmagent = Get-Command -Name 'azcmagent' -ErrorAction SilentlyContinue
-
-    if (-not $azcmagent) {
-        Add-HealthResult -Category 'Arc' -Name 'Azure Connected Machine Agent' -Status 'NotAvailable' -Details 'azcmagent was not found in PATH.'
+    if (-not (Get-Command Get-AzureLocalArcAgentState -ErrorAction SilentlyContinue)) {
+        Add-HealthResult -Category 'Arc' -Name 'Azure Connected Machine Agent' -Status 'NotAvailable' -Details 'The Arc agent state helper is unavailable.'
         return
     }
 
-    try {
-        $output = & $azcmagent.Source show 2>&1
-        $exitCode = $LASTEXITCODE
-
-        if ($exitCode -eq 0) {
-            Add-HealthResult -Category 'Arc' -Name 'Azure Connected Machine Agent' -Status 'Healthy' -Details 'azcmagent show completed successfully.'
-        }
-        else {
-            Add-HealthResult -Category 'Arc' -Name 'Azure Connected Machine Agent' -Status 'Warning' -Details ("azcmagent show returned exit code {0}. Output: {1}" -f $exitCode, (($output | Out-String).Trim()))
-        }
-    }
-    catch {
-        Add-HealthResult -Category 'Arc' -Name 'Azure Connected Machine Agent' -Status 'Unknown' -Details $_.Exception.Message
-    }
+    $arcState = Get-AzureLocalArcAgentState
+    Add-HealthResult -Category 'Arc' -Name 'Azure Connected Machine Agent' -Status $arcState.Status -Details $arcState.Details
 }
 
-function Export-HealthResults {
+function Export-HealthResult {
     param(
         [Parameter(Mandatory)]
         [object[]]$InputObject,
@@ -309,11 +320,13 @@ Get-NetworkAtcHealth
 Get-WdacHealth
 Get-ArcAgentHealth
 
-$results | Sort-Object Category, Name | Format-Table -AutoSize
+$sortedResults = @($results | Sort-Object -Property Category, Name)
 
 if ($OutputPath) {
-    Export-HealthResults -InputObject $results.ToArray() -Path $OutputPath -ExportFormat $Format
-    Write-Host ("Results exported to {0}" -f (Resolve-Path -LiteralPath $OutputPath))
+    Export-HealthResult -InputObject $sortedResults -Path $OutputPath -ExportFormat $Format
+    Write-Verbose ("Results exported to {0}" -f (Resolve-Path -LiteralPath $OutputPath))
 }
 
-$results.ToArray()
+# Emit objects once. PowerShell renders them as a table at the console, and
+# they can be piped to Where-Object, Format-Table, Export-Csv and so on.
+$sortedResults
