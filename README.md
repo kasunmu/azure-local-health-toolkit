@@ -1,5 +1,7 @@
 # Azure Local Health Toolkit
 
+[![PowerShell CI](https://github.com/kasunmu/azure-local-health-toolkit/actions/workflows/powershell-lint.yml/badge.svg)](https://github.com/kasunmu/azure-local-health-toolkit/actions/workflows/powershell-lint.yml)
+
 A reusable PowerShell toolkit for checking the operational health of Azure Local environments.
 
 The project is based on practical Azure Local administration and troubleshooting patterns, but all code in this repository is written to be environment-neutral. It does not contain organisation-specific names, IP addresses, tenant IDs, subscription IDs, credentials, or other sensitive configuration.
@@ -17,8 +19,8 @@ Version 0.1 focuses on core platform and pre-update checks:
 - Network ATC intent discovery
 - Management OS vNIC name validation
 - GUID-style virtual adapter warning detection
-- WDAC / Code Integrity enforcement-mode reporting
-- Azure Connected Machine agent presence and local status
+- WDAC / Code Integrity enforcement-mode reporting (anything other than enforced is flagged as a warning)
+- Azure Connected Machine agent connectivity, based on the agent's reported status rather than the command's exit code
 - Export of collected results to JSON or CSV
 
 The Network ATC and Management OS vNIC checks were added from a real Azure Local update troubleshooting pattern and converted into a reusable, read-only pre-update validation.
@@ -30,8 +32,10 @@ The Network ATC and Management OS vNIC checks were added from a real Azure Local
 ├── src/
 │   ├── Get-AzureLocalHealth.ps1
 │   └── private/
+│       ├── Get-AzureLocalArcAgentState.ps1
 │       ├── Get-AzureLocalWdacState.ps1
 │       └── Test-AzureLocalManagementVnicState.ps1
+├── tests/
 ├── scripts/
 │   └── network/
 ├── docs/
@@ -42,6 +46,7 @@ The Network ATC and Management OS vNIC checks were added from a real Azure Local
 ├── .github/
 │   └── workflows/
 │       └── powershell-lint.yml
+├── PSScriptAnalyzerSettings.psd1
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -66,6 +71,13 @@ Clone the repository and run:
 Set-ExecutionPolicy -Scope Process Bypass
 
 .\src\Get-AzureLocalHealth.ps1
+```
+
+The script returns one object per check, so you can filter and pipe the results:
+
+```powershell
+# Only the checks that need attention
+.\src\Get-AzureLocalHealth.ps1 | Where-Object Status -ne 'Healthy'
 ```
 
 To export the results:
@@ -101,7 +113,8 @@ CSV             Cluster Virtual Disk              Healthy  State: Online
 StoragePool     S2D on Cluster                    Healthy  HealthStatus: Healthy
 NetworkATC      Intent management_compute         Healthy  Detected intent roles: Management, Compute
 ManagementVnic  vManagement(management_compute)   Healthy  Expected Management OS vNIC name is present.
-WDAC            Application Control mode          Healthy  Kernel-mode CI: Enforced; User-mode CI: Audit
+WDAC            Application Control mode          Healthy  Kernel-mode CI: Enforced; User-mode CI: Enforced
+Arc             Azure Connected Machine Agent     Healthy  Agent status: Connected; Version: 1.47.0
 ```
 
 The names and values above are synthetic and are not copied from a production environment.
@@ -117,6 +130,17 @@ The `scripts/network` directory also contains standalone inspection and guarded 
 
 The main health collector remains read-only.
 
+## Testing
+
+Tests use [Pester](https://pester.dev) 5 and mock the Azure Local cmdlets, so they run on any machine, including Linux, without a cluster.
+
+```powershell
+Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser
+Invoke-Pester -Path .\tests -Output Detailed
+```
+
+Every push and pull request to `main` runs PSScriptAnalyzer and the Pester suite on Ubuntu and Windows. Analyzer warnings fail the build.
+
 ## Roadmap
 
 Planned additions include:
@@ -124,10 +148,9 @@ Planned additions include:
 - Azure Local update status and recent update failures
 - Windows Admin Center extension status
 - Certificate expiry checks
-- richer Arc connectivity validation
+- Arc extension and resource bridge validation
 - HTML reporting
 - threshold-based warning and critical states
-- Pester tests
 - additional documentation and troubleshooting guidance
 
 ## Security and privacy

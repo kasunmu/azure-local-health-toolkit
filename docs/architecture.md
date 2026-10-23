@@ -55,7 +55,7 @@ WDAC / Code Integrity state is collected by:
 
 `src/private/Get-AzureLocalWdacState.ps1`
 
-The helper is read-only and maps the Windows Device Guard enforcement values into human-readable `Off`, `Audit`, or `Enforced` states.
+The helper is read-only and maps the Windows Device Guard enforcement values into human-readable `Off`, `Audit`, or `Enforced` states. The check is Healthy only when kernel-mode and user-mode Code Integrity are both enforced. Audit or off is a Warning, because Azure Local applies WDAC in enforced mode by default and audit mode is meant as a temporary diagnostic step (see the vNIC/WDAC case study), not a resting state.
 
 ## Design principles
 
