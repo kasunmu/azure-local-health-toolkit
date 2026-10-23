@@ -7,7 +7,7 @@ The examples below are illustrative and do not represent a real production envir
 ```text
 Category        Name                              Status        Details
 --------        ----                              ------        -------
-Arc             Azure Connected Machine Agent     Healthy       azcmagent show completed successfully.
+Arc             Azure Connected Machine Agent     Healthy       Agent status: Connected; Version: 1.47.0
 Cluster         Cluster service                   Healthy       Cluster AZLOCAL-DEMO is reachable
 ClusterNode     NODE-01                           Healthy       State: Up
 ClusterNode     NODE-02                           Healthy       State: Up
