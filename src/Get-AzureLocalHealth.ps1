@@ -297,13 +297,18 @@ function Get-ArcAgentHealth {
 }
 
 function Get-UpdateHealth {
+    param(
+        [Parameter(Mandatory)]
+        [int]$MaxAgeDays
+    )
+
     if (-not (Get-Command Get-AzureLocalUpdateReadiness -ErrorAction SilentlyContinue)) {
         Add-HealthResult -Category 'Update' -Name 'Update readiness' -Status 'NotAvailable' -Details 'The update readiness helper is unavailable.'
         return
     }
 
     try {
-        foreach ($item in @(Get-AzureLocalUpdateReadiness -HealthCheckMaxAgeDays $HealthCheckMaxAgeDays)) {
+        foreach ($item in @(Get-AzureLocalUpdateReadiness -HealthCheckMaxAgeDays $MaxAgeDays)) {
             Add-HealthResult -Category $item.Category -Name $item.Name -Status $item.Status -Details $item.Details
         }
     }
@@ -345,7 +350,7 @@ Get-StorageHealth
 Get-NetworkAtcHealth
 Get-WdacHealth
 Get-ArcAgentHealth
-Get-UpdateHealth
+Get-UpdateHealth -MaxAgeDays $HealthCheckMaxAgeDays
 
 $sortedResults = @($results | Sort-Object -Property Category, Name)
 
