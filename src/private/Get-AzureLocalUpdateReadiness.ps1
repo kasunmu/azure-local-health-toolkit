@@ -1,4 +1,6 @@
 function New-AzureLocalUpdateResult {
+    # Builds an in-memory result object only; nothing on the system changes.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates an in-memory object only')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Name,

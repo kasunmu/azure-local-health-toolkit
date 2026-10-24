@@ -204,8 +204,20 @@ Describe 'Get-AzureLocalUpdateReadiness' {
     # Pester 4 scopes mocks to the enclosing Describe or Context, Pester 5 to each It.
     # Contexts keep the two groups of mocks apart under both versions.
     Context 'when Lifecycle Manager is missing' {
+        BeforeAll {
+            # Remove the stub so the cmdlet is genuinely absent, as on a node
+            # whose deployment has not completed. Mocking Get-Command itself
+            # does not behave consistently across Pester versions.
+            Remove-Item -Path Function:\Get-SolutionUpdateEnvironment -ErrorAction SilentlyContinue
+        }
+
+        AfterAll {
+            if ($script:createdStubs -contains 'Get-SolutionUpdateEnvironment') {
+                Set-Item -Path 'Function:global:Get-SolutionUpdateEnvironment' -Value { }
+            }
+        }
+
         It 'warns that deployment is incomplete when a cluster node has no Lifecycle Manager' {
-            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'Get-SolutionUpdateEnvironment' }
             Mock Get-Cluster { [pscustomobject]@{ Name = 'AZLOCAL-DEMO' } }
 
             $result = Get-AzureLocalUpdateReadiness
@@ -216,7 +228,6 @@ Describe 'Get-AzureLocalUpdateReadiness' {
         }
 
         It 'reports NotAvailable off-cluster when there is no Lifecycle Manager' {
-            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'Get-SolutionUpdateEnvironment' }
             Mock Get-Cluster { throw 'The cluster service is not running.' }
 
             (Get-AzureLocalUpdateReadiness).Status | Should -Be 'NotAvailable'
