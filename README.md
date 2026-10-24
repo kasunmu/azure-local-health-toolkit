@@ -21,6 +21,7 @@ Version 0.1 focuses on core platform and pre-update checks:
 - GUID-style virtual adapter warning detection
 - WDAC / Code Integrity enforcement-mode reporting (anything other than enforced is flagged as a warning)
 - Azure Connected Machine agent connectivity, based on the agent's reported status rather than the command's exit code
+- Solution update readiness: overall update state, readiness check results and age, pending or failed updates, and detection of incomplete deployments where Lifecycle Manager is missing ([details](docs/update-readiness.md))
 - Export of collected results to JSON or CSV
 
 The Network ATC and Management OS vNIC checks were added from a real Azure Local update troubleshooting pattern and converted into a reusable, read-only pre-update validation.
@@ -33,6 +34,7 @@ The Network ATC and Management OS vNIC checks were added from a real Azure Local
 │   ├── Get-AzureLocalHealth.ps1
 │   └── private/
 │       ├── Get-AzureLocalArcAgentState.ps1
+│       ├── Get-AzureLocalUpdateReadiness.ps1
 │       ├── Get-AzureLocalWdacState.ps1
 │       └── Test-AzureLocalManagementVnicState.ps1
 ├── tests/
@@ -78,6 +80,9 @@ The script returns one object per check, so you can filter and pipe the results:
 ```powershell
 # Only the checks that need attention
 .\src\Get-AzureLocalHealth.ps1 | Where-Object Status -ne 'Healthy'
+
+# Pre-maintenance: only the update readiness results
+.\src\Get-AzureLocalHealth.ps1 | Where-Object Category -eq 'Update'
 ```
 
 To export the results:
@@ -115,6 +120,9 @@ NetworkATC      Intent management_compute         Healthy  Detected intent roles
 ManagementVnic  vManagement(management_compute)   Healthy  Expected Management OS vNIC name is present.
 WDAC            Application Control mode          Healthy  Kernel-mode CI: Enforced; User-mode CI: Enforced
 Arc             Azure Connected Machine Agent     Healthy  Agent status: Connected; Version: 1.47.0
+Update          Update state                      Healthy  State: UpdateAvailable; Solution version: 12.2608.1001.4
+Update          Update readiness checks           Healthy  Readiness checks: Success; Last run: 2026-10-23 22:00 (0 day(s) ago)
+Update          Azure Local 2609                  Healthy  State: Ready; Version: 12.2609.1002.18
 ```
 
 The names and values above are synthetic and are not copied from a production environment.
@@ -145,7 +153,6 @@ Every push and pull request to `main` runs PSScriptAnalyzer and the Pester suite
 
 Planned additions include:
 
-- Azure Local update status and recent update failures
 - Windows Admin Center extension status
 - Certificate expiry checks
 - Arc extension and resource bridge validation

@@ -5,7 +5,8 @@
 
 .DESCRIPTION
     Runs read-only cluster, node, CSV, storage, Network ATC, Management OS
-    vNIC, WDAC, and Azure Connected Machine Agent checks. The script is
+    vNIC, WDAC, Azure Connected Machine Agent and solution update readiness
+    checks. The script is
     designed to be reusable and does not rely on organisation-specific values.
 
 .PARAMETER OutputPath
@@ -13,6 +14,10 @@
 
 .PARAMETER Format
     Export format when OutputPath is specified. Supported values: Json, Csv.
+
+.PARAMETER HealthCheckMaxAgeDays
+    Update readiness check results older than this many days are reported as
+    a Warning. Default: 7.
 
 .EXAMPLE
     .\Get-AzureLocalHealth.ps1
@@ -33,7 +38,11 @@ param(
 
     [Parameter()]
     [ValidateSet('Json', 'Csv')]
-    [string]$Format = 'Json'
+    [string]$Format = 'Json',
+
+    [Parameter()]
+    [ValidateRange(1, 365)]
+    [int]$HealthCheckMaxAgeDays = 7
 )
 
 Set-StrictMode -Version Latest
@@ -44,7 +53,8 @@ $results = [System.Collections.Generic.List[object]]::new()
 $privateHelpers = @(
     'Test-AzureLocalManagementVnicState.ps1',
     'Get-AzureLocalWdacState.ps1',
-    'Get-AzureLocalArcAgentState.ps1'
+    'Get-AzureLocalArcAgentState.ps1',
+    'Get-AzureLocalUpdateReadiness.ps1'
 )
 
 $privateRoot = Join-Path -Path $PSScriptRoot -ChildPath 'private'
@@ -286,6 +296,27 @@ function Get-ArcAgentHealth {
     Add-HealthResult -Category 'Arc' -Name 'Azure Connected Machine Agent' -Status $arcState.Status -Details $arcState.Details
 }
 
+function Get-UpdateHealth {
+    param(
+        [Parameter(Mandatory)]
+        [int]$MaxAgeDays
+    )
+
+    if (-not (Get-Command Get-AzureLocalUpdateReadiness -ErrorAction SilentlyContinue)) {
+        Add-HealthResult -Category 'Update' -Name 'Update readiness' -Status 'NotAvailable' -Details 'The update readiness helper is unavailable.'
+        return
+    }
+
+    try {
+        foreach ($item in @(Get-AzureLocalUpdateReadiness -HealthCheckMaxAgeDays $MaxAgeDays)) {
+            Add-HealthResult -Category $item.Category -Name $item.Name -Status $item.Status -Details $item.Details
+        }
+    }
+    catch {
+        Add-HealthResult -Category 'Update' -Name 'Update readiness' -Status 'Unknown' -Details $_.Exception.Message
+    }
+}
+
 function Export-HealthResult {
     param(
         [Parameter(Mandatory)]
@@ -319,6 +350,7 @@ Get-StorageHealth
 Get-NetworkAtcHealth
 Get-WdacHealth
 Get-ArcAgentHealth
+Get-UpdateHealth -MaxAgeDays $HealthCheckMaxAgeDays
 
 $sortedResults = @($results | Sort-Object -Property Category, Name)
 
