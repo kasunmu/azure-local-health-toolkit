@@ -32,8 +32,14 @@ Get-AzureLocalHealth.ps1
         |      +--> Kernel-mode Code Integrity state
         |      +--> User-mode Code Integrity state
         |
-        +--> azcmagent
-               +--> Local Azure Arc agent check
+        +--> azcmagent show -j
+        |      +--> Arc agent connection status
+        |
+        +--> Lifecycle Manager cmdlets
+               +--> Overall update state and versions
+               +--> Readiness check results and age
+               +--> Pending and failed solution updates
+               +--> Latest failed update run
         |
         v
 Normalised health objects
@@ -83,13 +89,17 @@ The `scripts/network` directory contains explicit troubleshooting helpers that a
 
 State-changing helpers require operator-provided values and support PowerShell confirmation / `-WhatIf` semantics. They do not automatically guess which adapter or intent should be changed.
 
+## Update readiness
+
+`Get-AzureLocalUpdateReadiness.ps1` is split into two pure classification functions (`ConvertTo-AzureLocalUpdateEnvironmentResult` and `ConvertTo-AzureLocalSolutionUpdateResult`) and a thin collector that calls the Lifecycle Manager cmdlets. The classification functions take plain objects, so the status mapping is covered by Pester tests without a cluster.
+
+See [update-readiness.md](update-readiness.md) for the status mapping and how to act on each result.
+
 ## Planned modules
 
 Future releases will add:
 
-- Azure Local solution update status and recent failures
 - Windows Admin Center extension state
 - Certificate expiry
-- richer Azure Arc connectivity checks
+- Arc extension and resource bridge checks
 - HTML reporting
-- Pester tests

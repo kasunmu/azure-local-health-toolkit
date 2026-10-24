@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Solution update readiness check (`Get-AzureLocalUpdateReadiness`): overall update state and versions, readiness check state and age, failed readiness checks by severity, pending and failed updates, and the latest failed run's action plan instance ID
+- Detection of incomplete deployments: a cluster node without the Lifecycle Manager cmdlets is reported as a Warning with guidance instead of NotAvailable
+- `-HealthCheckMaxAgeDays` parameter to flag stale readiness results (default 7)
+- Update readiness documentation in `docs/update-readiness.md`
 - Pester test suite with mocked cmdlets, run on Ubuntu and Windows in CI
 - `PSScriptAnalyzerSettings.psd1` with documented rule exclusions
 
