@@ -1,0 +1,73 @@
+name: PowerShell CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: PSScriptAnalyzer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+
+          $findings = foreach ($path in './src', './scripts', './tests') {
+              Invoke-ScriptAnalyzer -Path $path -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          }
+
+          if ($findings) {
+              $findings | Format-Table -AutoSize -Property Severity, RuleName, ScriptName, Line, Message | Out-String -Width 220 | Write-Output
+              foreach ($finding in $findings) {
+                  $file = Resolve-Path -Relative $finding.ScriptPath
+                  Write-Output ("::error file={0},line={1}::{2}: {3}" -f $file, $finding.Line, $finding.RuleName, $finding.Message)
+              }
+              throw ("PSScriptAnalyzer reported {0} finding(s)." -f @($findings).Count)
+          }
+
+          Write-Output 'PSScriptAnalyzer: no findings.'
+
+  test:
+    name: Pester (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          Import-Module Pester -MinimumVersion 5.5.0
+
+          $config = New-PesterConfiguration
+          $config.Run.Path = './tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = 'testResults.xml'
+
+          Invoke-Pester -Configuration $config
